@@ -1,0 +1,35 @@
+envVarGroups:
+  - name: needle-drop-secrets
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: UNSUBSCRIBE_SECRET
+        generateValue: true
+services:
+  - type: web
+    name: needle-drop
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    preDeployCommand: node node_modules/tsx/dist/cli.mjs scripts/migrate.ts
+    envVars:
+      - fromGroup: needle-drop-secrets
+  - type: cron
+    name: needle-drop-jobs
+    runtime: docker
+    schedule: '*/5 * * * *'
+    dockerCommand: node node_modules/tsx/dist/cli.mjs scripts/jobs.ts
+    envVars:
+      - fromGroup: needle-drop-secrets
