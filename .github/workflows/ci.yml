@@ -30,6 +30,6 @@ jobs:
       - name: Verify yt-dlp
         run: docker run --rm --entrypoint /opt/yt-dlp/bin/yt-dlp needledrop:ci --version
       - name: Typecheck inside the production image
-        run: docker run --rm needledrop:ci node node_modules/typescript/bin/tsc --noEmit
+        run: docker run --rm needledrop:ci node node_modules/typescript/bin/tsc --noEmit --incremental false
       - name: Run isolated tests inside the production image
         run: docker run --rm needledrop:ci sh -c 'node node_modules/tsx/dist/cli.mjs --test tests/*.test.ts'
