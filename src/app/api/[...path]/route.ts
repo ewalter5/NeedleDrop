@@ -147,6 +147,7 @@ async function route(req: NextRequest, { params }: { params: Promise<{ path: str
       return json({ ok: true });
     }
     const p = await requireUser();
+    if (name === 'session' && method === 'GET') return json({ userId: p.id });
     if (method !== 'GET') await rateLimit(`write:${p.id}`, 90);
     if (name === 'profile' && method === 'PATCH') {
       const d = z

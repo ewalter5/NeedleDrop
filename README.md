@@ -7,6 +7,7 @@ Built with Next.js/TypeScript, PostgreSQL, Supabase Auth/Storage, FFmpeg, yt-dlp
 ## Features
 
 - Private member accounts, assigned quiz hosts, and administrator tools.
+- Active tabs check the server session every minute and when returning to the tab, allowing Supabase to renew cookies before the next action. Lost sessions show a sign-in link without closing the current form.
 - Audio uploads and YouTube links with start/end selection, previews, and 15/20/30-second presets.
 - Optional Spotify playlist metadata import followed by reviewed YouTube matches.
 - Song title, artist, connection, theme, and custom questions with configurable points.

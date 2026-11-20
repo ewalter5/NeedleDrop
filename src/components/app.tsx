@@ -26,6 +26,7 @@ import { QuizPage, ResultsPage } from './quiz';
 import { Community, PostCard } from './community';
 import { Account, AuthPage, UnsubscribePage } from './account';
 import { HostPage } from './host';
+import { SessionKeepalive } from './session-keepalive';
 type AppContext = { data: Bootstrap; refresh: () => Promise<void> };
 const Context = createContext<AppContext | null>(null);
 export function useApp() {
@@ -241,6 +242,7 @@ export default function App() {
             </div>
           )}
           <main className="main-content" key={path}>
+            <SessionKeepalive userId={!data.demo && !authView ? data.profile?.id : undefined} />
             {page}
           </main>
           <footer>
