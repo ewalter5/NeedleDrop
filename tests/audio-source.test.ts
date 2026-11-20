@@ -159,6 +159,7 @@ test('playlist import refreshes server credentials, handles current item format 
         { item: { type: 'episode', name: 'Podcast' } },
         { is_local: true, item: { type: 'track', name: 'Local' } },
         { item: { type: 'track', id: 'track-id', name: 'Song', artists: [{ name: 'Artist' }] } },
+        { item: { type: 'track', id: 'track-id', name: 'Song', artists: [{ name: 'Artist' }] } },
       ],
       next: null,
     });

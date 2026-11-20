@@ -84,8 +84,51 @@ test('YouTube import enforces host access and queues a validated private excerpt
   );
   assert.deepEqual(job.payload.segment, { start: 45, end: 65 });
   assert.equal(job.payload.youtubeUrl, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(
+    (
+      await service.importYoutubeClip(clipId, dad, {
+        ...input,
+        url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=45',
+      })
+    ).duplicate,
+    true,
+  );
+  assert.equal(
+    (
+      await query(
+        "SELECT count(*)::int AS n FROM jobs WHERE kind='process_audio' AND payload->>'clipId'=$1",
+        [clipId],
+      )
+    )[0].n,
+    1,
+  );
+  assert.equal(
+    (await service.hostQuiz(created.id, dad)).quiz.clips[0].sourceUrl,
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  );
+  const duplicateId = id(979);
+  await query('INSERT INTO clips(id,quiz_id,position) VALUES($1,$2,2)', [duplicateId, created.id]);
+  await assert.rejects(
+    () => service.importYoutubeClip(duplicateId, dad, input),
+    /already used in Clip 1/,
+  );
+  await query("UPDATE clips SET audio_status='ready',storage_key=$2 WHERE id=$1", [
+    clipId,
+    `clips/${clipId}/${job.id}.mp3`,
+  ]);
+  assert.equal((await service.importYoutubeClip(clipId, dad, input)).duplicate, true);
+  await service.importYoutubeClip(clipId, dad, { ...input, start: 46, end: 66 });
+  assert.equal(
+    (
+      await query(
+        "SELECT count(*)::int AS n FROM jobs WHERE kind='process_audio' AND payload->>'clipId'=$1",
+        [clipId],
+      )
+    )[0].n,
+    2,
+  );
   // Keep subsequent scheduler tests offline.
-  await query('DELETE FROM jobs WHERE id=$1', [job.id]);
+  await query('DELETE FROM jobs');
   await query("UPDATE quizzes SET state='scheduled' WHERE id=$1", [created.id]);
   await assert.rejects(() => service.importYoutubeClip(clipId, dad, input), /locks/);
   await query('DELETE FROM quizzes WHERE id=$1', [created.id]);

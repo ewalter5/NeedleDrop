@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
@@ -8,10 +8,17 @@ import { useApp } from './app';
 import { api, AudioPlayer, Loading, Notice, dateLabel } from './shared';
 import type { Quiz, Field, Submission, FieldKind } from '@/lib/types';
 import { AudioEditor, PlaylistImporter, type SourceTrack } from './audio-editor';
+import { findExistingSong } from '@/lib/clip-sources';
 type HostField = Field & { answer: string };
 type HostQuiz = Omit<Quiz, 'fields' | 'clips'> & {
   fields: HostField[];
-  clips: { id: string; position: number; ready: boolean; audioStatus?: string }[];
+  clips: {
+    id: string;
+    position: number;
+    ready: boolean;
+    audioStatus?: string;
+    sourceUrl?: string | null;
+  }[];
 };
 type HostEntry = Submission & {
   suggestions: Record<string, { match: string; points: number | null }>;
@@ -27,6 +34,8 @@ export function HostPage({ id }: { id?: string }) {
   const router = useRouter();
   const [host, setHost] = useState<HostData | null>(null);
   const [quiz, setQuiz] = useState<HostQuiz | null>(null);
+  const quizRef = useRef<HostQuiz | null>(null);
+  quizRef.current = quiz;
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -34,12 +43,12 @@ export function HostPage({ id }: { id?: string }) {
   const [users, setUsers] = useState<Member[]>([]);
   const [assign, setAssign] = useState('');
   const [deadline, setDeadline] = useState('');
-  const [sourceUrls, setSourceUrls] = useState<Record<string, string>>({});
   const [audioVersions, setAudioVersions] = useState<Record<string, number>>({});
   async function load() {
     if (!id) return;
     const h = await api<HostData>(`host/${id}`);
     setHost(h);
+    quizRef.current = h.quiz;
     setQuiz(h.quiz);
     setDeadline(formatInTimeZone(h.quiz.deadline, h.quiz.timezone, "yyyy-MM-dd'T'HH:mm"));
   }
@@ -83,17 +92,31 @@ export function HostPage({ id }: { id?: string }) {
       })),
     });
   }
-  const update = (patch: Partial<HostQuiz>) => setQuiz((q) => (q ? { ...q, ...patch } : null));
-  const updateField = (fieldId: string, patch: Partial<HostField>) =>
-    setQuiz((q) =>
-      q ? { ...q, fields: q.fields.map((f) => (f.id === fieldId ? { ...f, ...patch } : f)) } : null,
-    );
+  const update = (patch: Partial<HostQuiz>) => {
+    const current = quizRef.current;
+    if (!current) return;
+    const next = { ...current, ...patch };
+    quizRef.current = next;
+    setQuiz(next);
+  };
+  const updateField = (fieldId: string, patch: Partial<HostField>) => {
+    const current = quizRef.current;
+    if (current)
+      update({ fields: current.fields.map((f) => (f.id === fieldId ? { ...f, ...patch } : f)) });
+  };
+  function songAlreadyAdded(track: SourceTrack, url: string) {
+    const current = quizRef.current;
+    return !!current && !!findExistingSong(current.clips, current.fields, url, track);
+  }
   function addSourceClip(track: SourceTrack, url: string) {
-    if (!quiz || quiz.clips.length >= 30) return;
+    const quiz = quizRef.current;
+    if (!quiz || quiz.clips.length >= 30 || songAlreadyAdded(track, url)) return false;
     const clipId = crypto.randomUUID();
-    setSourceUrls((current) => ({ ...current, [clipId]: url }));
     update({
-      clips: [...quiz.clips, { id: clipId, position: quiz.clips.length + 1, ready: false }],
+      clips: [
+        ...quiz.clips,
+        { id: clipId, position: quiz.clips.length + 1, ready: false, sourceUrl: url },
+      ],
       fields: [
         ...quiz.fields,
         ...(['title', 'artist', 'connection'] as const).map((kind, i) => ({
@@ -109,6 +132,7 @@ export function HostPage({ id }: { id?: string }) {
         })),
       ],
     });
+    return true;
   }
   function addField(clipId: string | null, kind: FieldKind = 'custom') {
     if (!quiz) return;
@@ -436,6 +460,7 @@ export function HostPage({ id }: { id?: string }) {
               quizId={id}
               disabled={busy || quiz.clips.length >= 30}
               onAdd={addSourceClip}
+              isAdded={songAlreadyAdded}
             />
           )}
           {quiz.clips.map((clip, i) => (
@@ -462,7 +487,7 @@ export function HostPage({ id }: { id?: string }) {
               </div>
               {editable && (
                 <AudioEditor
-                  initialUrl={sourceUrls[clip.id]}
+                  initialUrl={clip.sourceUrl || ''}
                   disabled={busy}
                   onSubmit={async (source) => {
                     await action(async () => {

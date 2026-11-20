@@ -14,6 +14,7 @@ import type { Bootstrap, Profile, Quiz, Field, Clip, Post, Submission, Result } 
 import { quizSchema, submissionSchema, gradeSchema, postSchema } from './validation';
 import { storage } from './storage';
 import { segmentSchema, youtubeUrl } from '@/lib/audio-source';
+import { currentYoutubeSources } from './clip-sources';
 
 const quizSelect = `SELECT q.id,q.title,q.description,q.rules,q.release_at AS "releaseAt",q.deadline,q.timezone,q.state,q.released_at AS "releasedAt",p.display_name AS "hostName",
  (SELECT count(*)::int FROM clips WHERE quiz_id=q.id) AS "clipCount",COALESCE((SELECT sum(max_points)::float FROM answer_fields WHERE quiz_id=q.id),0) AS "maxPoints"
@@ -163,6 +164,9 @@ export async function hostQuiz(id: string, p: Profile) {
     `SELECT id,position,(audio_status='ready') AS ready,audio_status AS "audioStatus" FROM clips WHERE quiz_id=$1 ORDER BY position`,
     [id],
   );
+  const sources = await currentYoutubeSources(id);
+  for (const clip of clips)
+    clip.sourceUrl = sources.find((source) => source.id === clip.id)?.payload.youtubeUrl || null;
   const submissions = await query(
     `SELECT s.id,s.user_id AS "userId",p.display_name AS "displayName",s.answers,s.submitted_at AS "submittedAt",s.reviewed,s.version,
     COALESCE((SELECT jsonb_object_agg(field_id,jsonb_build_object('points',points,'feedback',feedback)) FROM grades WHERE submission_id=s.id),'{}') AS grades
@@ -464,6 +468,23 @@ export async function importYoutubeClip(clipId: string, p: Profile, input: unkno
     if (q.state !== 'draft') throw new HttpError(409, 'Audio locks when a quiz is scheduled.');
     const [fresh] = await query('SELECT * FROM clips WHERE id=$1', [clipId], c);
     if (!fresh) throw new HttpError(409, 'This clip was removed.');
+    const sources = await currentYoutubeSources(clip.quiz_id, c);
+    const current = sources.find((source) => source.id === clipId);
+    if (
+      current?.payload.youtubeUrl === url &&
+      current.payload.segment?.start === segment.start &&
+      current.payload.segment?.end === segment.end &&
+      ['processing', 'ready'].includes(fresh.audio_status)
+    )
+      return { ok: true, duplicate: true };
+    const duplicate = sources.find(
+      (source) => source.id !== clipId && source.payload.youtubeUrl === url,
+    );
+    if (duplicate)
+      throw new HttpError(
+        409,
+        `This recording is already used in Clip ${duplicate.position}. Edit that clip instead.`,
+      );
     if (fresh.storage_key)
       await enqueue(
         'delete_audio',

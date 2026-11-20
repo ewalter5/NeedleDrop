@@ -11,10 +11,12 @@ export function PlaylistImporter({
   quizId,
   disabled,
   onAdd,
+  isAdded,
 }: {
   quizId: string;
   disabled: boolean;
-  onAdd: (track: SourceTrack, url: string) => void;
+  onAdd: (track: SourceTrack, url: string) => boolean;
+  isAdded: (track: SourceTrack, url: string) => boolean;
 }) {
   const [link, setLink] = useState('');
   const [tracks, setTracks] = useState<SourceTrack[]>([]);
@@ -134,33 +136,39 @@ export function PlaylistImporter({
             Check the recording before adding it. Search results may include covers or live
             versions.
           </p>
-          {matches.map((m) => (
-            <div className="source-track" key={m.url}>
-              <div>
-                <a href={m.url} target="_blank" rel="noreferrer">
-                  {m.title}
-                </a>
-                <span>
-                  {m.channel}
-                  {m.duration
-                    ? ` · ${Math.floor(m.duration / 60)}:${String(Math.floor(m.duration % 60)).padStart(2, '0')}`
-                    : ''}
-                </span>
+          {matches.map((m) => {
+            const song = track || { ...m.song, url: '' };
+            const added = isAdded(song, m.url);
+            return (
+              <div className="source-track" key={m.url}>
+                <div>
+                  <a href={m.url} target="_blank" rel="noreferrer">
+                    {m.title}
+                  </a>
+                  <span>
+                    {m.channel}
+                    {m.duration
+                      ? ` · ${Math.floor(m.duration / 60)}:${String(Math.floor(m.duration % 60)).padStart(2, '0')}`
+                      : ''}
+                  </span>
+                </div>
+                <button
+                  className="button"
+                  disabled={disabled || busy || added}
+                  onClick={() => {
+                    const created = onAdd(song, m.url);
+                    setMessage(
+                      created
+                        ? 'Added a clip below. Choose its start and end, then import the excerpt.'
+                        : 'This song is already in the quiz. Edit the existing clip below.',
+                    );
+                  }}
+                >
+                  {added ? 'Already added' : 'Add this recording'}
+                </button>
               </div>
-              <button
-                className="button"
-                disabled={disabled || busy}
-                onClick={() => {
-                  onAdd(track || { ...m.song, url: '' }, m.url);
-                  setMessage(
-                    'Added a clip below. Choose its start and end, then import the excerpt.',
-                  );
-                }}
-              >
-                Add this recording
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       <Notice error message={error} />
@@ -187,6 +195,7 @@ export function AudioEditor({
   const [end, setEnd] = useState(20);
   const [error, setError] = useState('');
   const [working, setWorking] = useState(false);
+  const submitting = useRef(false);
   const audio = useRef<HTMLAudioElement>(null);
   const sourceDuration = mode === 'file' ? duration : 0;
   useEffect(() => {
@@ -381,6 +390,8 @@ export function AudioEditor({
           className="button"
           disabled={disabled || working || !valid}
           onClick={async () => {
+            if (submitting.current) return;
+            submitting.current = true;
             setError('');
             setWorking(true);
             audio.current?.pause();
@@ -393,6 +404,7 @@ export function AudioEditor({
             } catch (e) {
               setError((e as Error).message);
             } finally {
+              submitting.current = false;
               setWorking(false);
             }
           }}

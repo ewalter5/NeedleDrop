@@ -50,6 +50,7 @@ export async function playlistTracks(value: string) {
   }
   const token = await spotifyToken();
   const tracks: { title: string; artist: string; url: string }[] = [];
+  const seen = new Set<string>();
   let more = false;
   // Bound API work and keep imports within the quiz's 30-clip limit.
   for (let offset = 0; offset < 300 && tracks.length < 30; offset += 50) {
@@ -72,6 +73,7 @@ export async function playlistTracks(value: string) {
     for (const entry of page.items || []) {
       const track = entry.item ?? entry.track;
       if (!track || track.type !== 'track' || entry.is_local || track.is_local) continue;
+      if (seen.has(track.id)) continue;
       if (tracks.length === 30) {
         more = true;
         break;
@@ -84,6 +86,7 @@ export async function playlistTracks(value: string) {
           .slice(0, 300),
         url: `https://open.spotify.com/track/${track.id}`,
       });
+      seen.add(track.id);
     }
     more = (more && tracks.length === 30) || !!page.next;
     if (!page.next) break;

@@ -139,6 +139,8 @@ In a draft quiz, **Import songs** reads a Spotify playlist's titles and artists.
 
 YouTube search selections suggest the song and artist immediately, preferring music metadata and falling back to common `Artist - Song` titles. For directly pasted links, the background worker fills blank title/artist answers from download metadata; refresh after processing. Existing answers and host corrections are preserved. These are suggestions, so verify the correct answers before publishing. Uploaded local audio files still use manually entered answers.
 
+Songs already present in a quiz show **Already added** in search results. The editor checks the video URL and matching song/artist answers, and blocks repeated clicks. Spotify imports skip repeated track IDs. The server reuses an existing processing request for the same clip, YouTube URL and time range, and blocks adding the same active YouTube recording to another clip in that quiz. Changing an existing clip's range still creates a new excerpt; failed imports can be retried. These checks also apply after a saved import is reloaded. Existing duplicate clips are retained: use **Remove clip**, then save the draft to clean them up.
+
 Credentials are a one-time server setup. Hosts never enter tokens or sign into Spotify in the editor. Spotify's current development-mode rules require the app owner to have Premium, and playlist items are accessible only when the authorized user owns or collaborates on that playlist. Public visibility alone does not grant API access. Players listening to the quiz do not need Spotify accounts or Premium. The API reads at most 30 available tracks, skipping local files and episodes.
 
 To configure Spotify locally:
