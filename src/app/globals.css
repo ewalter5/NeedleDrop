@@ -2829,12 +2829,6 @@ footer > span {
   padding: 0;
   width: 100%;
 }
-.youtube-preview {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  border: 0;
-  border-radius: 12px;
-}
 .source-track-list {
   display: grid;
   gap: 12px;

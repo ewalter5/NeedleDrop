@@ -184,10 +184,10 @@ export function AudioEditor({
   const [duration, setDuration] = useState(0);
   const [start, setStart] = useState(0);
   const [end, setEnd] = useState(20);
-  const [preview, setPreview] = useState('');
   const [error, setError] = useState('');
   const [working, setWorking] = useState(false);
   const audio = useRef<HTMLAudioElement>(null);
+  const sourceDuration = mode === 'file' ? duration : 0;
   useEffect(() => {
     if (!file) {
       setLocalUrl('');
@@ -200,8 +200,7 @@ export function AudioEditor({
   function rangeStart(value: number) {
     const next = Math.max(0, value);
     setStart(next);
-    setEnd(Math.min(duration || 43260, next + Math.min(60, Math.max(1, end - start))));
-    setPreview('');
+    setEnd(Math.min(sourceDuration || 43260, next + Math.min(60, Math.max(1, end - start))));
   }
   const valid =
     segmentSchema.safeParse({ start, end }).success &&
@@ -216,11 +215,11 @@ export function AudioEditor({
           onChange={(e) => {
             setMode(e.target.value as 'file' | 'youtube');
             setError('');
-            setPreview('');
+            audio.current?.pause();
           }}
         >
           <option value="file">Upload an audio file</option>
-          <option value="youtube">YouTube video link</option>
+          <option value="youtube">Audio from a YouTube link</option>
         </select>
       </label>
       {mode === 'youtube' ? (
@@ -233,7 +232,6 @@ export function AudioEditor({
             disabled={disabled || working}
             onChange={(e) => {
               setUrl(e.target.value);
-              setPreview('');
             }}
           />
         </label>
@@ -295,7 +293,7 @@ export function AudioEditor({
           <input
             type="number"
             min="0"
-            max={duration || 43200}
+            max={sourceDuration || 43200}
             step="0.1"
             value={start}
             disabled={disabled || working}
@@ -307,13 +305,12 @@ export function AudioEditor({
           <input
             type="number"
             min={start + 0.1}
-            max={Math.min(duration || 43260, start + 60)}
+            max={Math.min(sourceDuration || 43260, start + 60)}
             step="0.1"
             value={end}
             disabled={disabled || working}
             onChange={(e) => {
               setEnd(Number(e.target.value));
-              setPreview('');
             }}
           />
         </label>
@@ -342,8 +339,7 @@ export function AudioEditor({
             key={seconds}
             disabled={disabled || working}
             onClick={() => {
-              setEnd(Math.min(duration || 43260, start + seconds));
-              setPreview('');
+              setEnd(Math.min(sourceDuration || 43260, start + seconds));
             }}
           >
             {seconds} seconds
@@ -354,29 +350,32 @@ export function AudioEditor({
         Selected excerpt: {Math.max(0, end - start).toFixed(1)} seconds (maximum 60). Only the
         processed excerpt is shared with players.
       </p>
+      {mode === 'youtube' && (
+        <p className="fine-print">
+          Import the excerpt to create an audio clip. Once processing finishes, refresh the quiz and
+          use Play clip below to listen. To change the excerpt, adjust the times and import again.
+        </p>
+      )}
       <div className="button-row">
-        <button
-          className="button secondary"
-          disabled={disabled || working || !valid}
-          onClick={async () => {
-            setError('');
-            try {
-              if (mode === 'file' && audio.current) {
-                audio.current.currentTime = start;
-                await audio.current.play();
-              } else {
-                const id = new URL(youtubeUrl(url)).searchParams.get('v');
-                setPreview(
-                  `https://www.youtube-nocookie.com/embed/${id}?start=${Math.floor(start)}&end=${Math.ceil(end)}&autoplay=1`,
-                );
+        {mode === 'file' && (
+          <button
+            className="button secondary"
+            disabled={disabled || working || !valid}
+            onClick={async () => {
+              setError('');
+              try {
+                if (audio.current) {
+                  audio.current.currentTime = start;
+                  await audio.current.play();
+                }
+              } catch {
+                setError('Audio preview failed. Check the audio file.');
               }
-            } catch {
-              setError('Preview failed. Check the link or audio file.');
-            }
-          }}
-        >
-          Preview excerpt
-        </button>
+            }}
+          >
+            Preview excerpt
+          </button>
+        )}
         <button
           className="button"
           disabled={disabled || working || !valid}
@@ -384,7 +383,6 @@ export function AudioEditor({
             setError('');
             setWorking(true);
             audio.current?.pause();
-            setPreview('');
             try {
               await onSubmit({
                 ...(mode === 'file' ? { file: file! } : { url: youtubeUrl(url) }),
@@ -401,15 +399,6 @@ export function AudioEditor({
           {working ? 'Submitting…' : mode === 'file' ? 'Upload excerpt' : 'Import YouTube excerpt'}
         </button>
       </div>
-      {preview && (
-        <iframe
-          className="youtube-preview"
-          title="Host excerpt preview"
-          src={preview}
-          allow="autoplay; encrypted-media"
-          allowFullScreen
-        />
-      )}
       {mode === 'youtube' && (
         <p className="fine-print">
           Use recordings you’re authorized to download and reuse. Availability varies; private,
