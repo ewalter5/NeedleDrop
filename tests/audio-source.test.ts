@@ -3,6 +3,83 @@ import assert from 'node:assert/strict';
 import { segmentSchema, youtubeUrl, spotifyPlaylistId } from '../src/lib/audio-source';
 import { ffmpegArguments, youtubeArguments } from '../src/server/jobs';
 import { playlistTracks } from '../src/server/sources';
+import { audioStep, audioFailureMessage } from '../src/server/audio-errors';
+
+test('yt-dlp discovers FFmpeg on PATH and receives an override only for actual paths', () => {
+  const saved = process.env.FFMPEG_PATH;
+  try {
+    for (const value of [
+      undefined,
+      'ffmpeg',
+      'ffmpeg.exe',
+      'C:\\tools\\ffmpeg.exe',
+      '/usr/bin/ffmpeg',
+    ]) {
+      if (value === undefined) delete process.env.FFMPEG_PATH;
+      else process.env.FFMPEG_PATH = value;
+      const args = youtubeArguments('https://youtu.be/dQw4w9WgXcQ', 'clip.%(ext)s', {
+        start: 0,
+        end: 20,
+      });
+      const index = args.indexOf('--ffmpeg-location');
+      if (value && /[\\/]/.test(value)) assert.equal(args[index + 1], value);
+      else assert.equal(index, -1);
+    }
+  } finally {
+    if (saved === undefined) delete process.env.FFMPEG_PATH;
+    else process.env.FFMPEG_PATH = saved;
+  }
+});
+
+test('audio diagnostics identify failure stages without leaking tool output or credentials', async () => {
+  const secret = 'private-token-and-song-name';
+  const failures = [
+    {
+      step: 'YouTube download' as const,
+      error: { code: 'ENOENT', message: secret },
+      match: /yt-dlp was not found/,
+    },
+    {
+      step: 'Audio inspection' as const,
+      error: { code: 'ENOENT', message: secret },
+      match: /ffprobe was not found/,
+    },
+    {
+      step: 'Audio conversion' as const,
+      error: { killed: true, stderr: secret },
+      match: /timed out/,
+    },
+    {
+      step: 'YouTube download' as const,
+      error: { stderr: `WARNING: ffmpeg-location ffmpeg does not exist! ${secret}` },
+      match: /FFmpeg was not found by yt-dlp/,
+    },
+    {
+      step: 'YouTube download' as const,
+      error: { stderr: `HTTP Error 403 ${secret}` },
+      match: /YouTube blocked/,
+    },
+    {
+      step: 'Audio storage' as const,
+      error: { message: secret, stderr: secret },
+      match: /Audio storage failed/,
+    },
+  ];
+  for (const failure of failures) {
+    await assert.rejects(
+      audioStep(failure.step, async () => {
+        throw failure.error;
+      }),
+      (error) => {
+        const message = audioFailureMessage(error);
+        assert.match(message, failure.match);
+        assert.equal(message.includes(secret), false);
+        return true;
+      },
+    );
+  }
+  assert.equal(audioFailureMessage(new Error(secret)).includes(secret), false);
+});
 
 test('only canonical YouTube video URLs can reach the downloader', () => {
   const expected = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';

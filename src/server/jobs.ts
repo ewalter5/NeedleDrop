@@ -10,6 +10,7 @@ import { reminderDue } from '@/lib/domain';
 import { storage } from './storage';
 import { mailer, unsubscribeUrl } from './mail';
 import { segmentSchema, youtubeUrl, type Segment } from '@/lib/audio-source';
+import { audioStep, audioFailureMessage, AudioProcessingError } from './audio-errors';
 
 export const ffmpegArguments = (input: string, output: string, segment?: Segment) => [
   '-nostdin',
@@ -40,6 +41,7 @@ export const ffmpegArguments = (input: string, output: string, segment?: Segment
 ];
 export function youtubeArguments(url: string, output: string, segment: Segment) {
   const range = segmentSchema.parse(segment);
+  const ffmpeg = process.env.FFMPEG_PATH;
   return [
     '--ignore-config',
     '--no-plugin-dirs',
@@ -63,8 +65,8 @@ export function youtubeArguments(url: string, output: string, segment: Segment) 
     '--download-sections',
     `*${range.start}-${range.end}`,
     '--force-keyframes-at-cuts',
-    '--ffmpeg-location',
-    process.env.FFMPEG_PATH || 'ffmpeg',
+    // yt-dlp requires an actual file/directory here, not a command name on PATH.
+    ...(ffmpeg && /[\\/]/.test(ffmpeg) ? ['--ffmpeg-location', ffmpeg] : []),
     '--output',
     output,
     '--',
@@ -78,23 +80,28 @@ async function audioDuration(path: string) {
     (ffmpeg && /[\\/]/.test(ffmpeg)
       ? join(dirname(ffmpeg), process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe')
       : 'ffprobe');
-  const { stdout } = await promisify(execFile)(
-    probe,
-    [
-      '-v',
-      'error',
-      '-protocol_whitelist',
-      'file,pipe',
-      '-show_entries',
-      'format=duration',
-      '-of',
-      'json',
-      path,
-    ],
-    { timeout: 15000, maxBuffer: 1024 * 1024, windowsHide: true },
+  const { stdout } = await audioStep('Audio inspection', () =>
+    promisify(execFile)(
+      probe,
+      [
+        '-v',
+        'error',
+        '-protocol_whitelist',
+        'file,pipe',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'json',
+        path,
+      ],
+      { timeout: 15000, maxBuffer: 1024 * 1024, windowsHide: true },
+    ),
   );
   const duration = Number(JSON.parse(stdout).format?.duration);
-  if (!Number.isFinite(duration) || duration <= 0) throw new Error('Invalid audio duration');
+  if (!Number.isFinite(duration) || duration <= 0)
+    throw new AudioProcessingError(
+      'Audio inspection failed. Could not determine the audio duration.',
+    );
   return duration;
 }
 type Job = {
@@ -249,29 +256,43 @@ async function processAudio(job: Job) {
       const output = join(dir, 'clip.mp3');
       if (sourceUrl) {
         if (!segment) throw new Error('Missing YouTube segment');
-        await promisify(execFile)(
-          process.env.YTDLP_PATH || 'yt-dlp',
-          youtubeArguments(sourceUrl, join(dir, 'download.%(ext)s'), segment),
-          { timeout: 180000, maxBuffer: 1024 * 1024, windowsHide: true },
+        await audioStep('YouTube download', () =>
+          promisify(execFile)(
+            process.env.YTDLP_PATH || 'yt-dlp',
+            youtubeArguments(sourceUrl, join(dir, 'download.%(ext)s'), segment),
+            { timeout: 180000, maxBuffer: 1024 * 1024, windowsHide: true },
+          ),
         );
         const files = (await readdir(dir)).filter(
           (f) => /^download\.[a-z0-9]+$/.test(f) && !f.endsWith('.part'),
         );
-        if (files.length !== 1) throw new Error('No downloaded audio');
+        if (files.length !== 1)
+          throw new AudioProcessingError(
+            'YouTube download failed. No audio excerpt was produced. Choose another recording.',
+          );
         input = join(dir, files[0]);
         if ((await stat(input)).size > 25 * 1024 * 1024)
-          throw new Error('Downloaded audio is too large');
-      } else await writeFile(input, await storage().download(originalKey));
+          throw new AudioProcessingError(
+            'YouTube download failed. The downloaded file exceeds 25 MB.',
+          );
+      } else
+        await audioStep('Audio storage', async () =>
+          writeFile(input, await storage().download(originalKey)),
+        );
       if (segment && !sourceUrl && segment.end > (await audioDuration(input)) + 0.15)
-        throw new Error('Selected range exceeds the recording');
-      await promisify(execFile)(
-        process.env.FFMPEG_PATH || 'ffmpeg',
-        ffmpegArguments(
-          input,
-          output,
-          sourceUrl ? { start: 0, end: segment!.end - segment!.start } : segment,
+        throw new AudioProcessingError(
+          'Audio inspection failed. The selected end time exceeds the recording duration.',
+        );
+      await audioStep('Audio conversion', () =>
+        promisify(execFile)(
+          process.env.FFMPEG_PATH || 'ffmpeg',
+          ffmpegArguments(
+            input,
+            output,
+            sourceUrl ? { start: 0, end: segment!.end - segment!.start } : segment,
+          ),
+          { timeout: 90000, maxBuffer: 1024 * 1024 },
         ),
-        { timeout: 90000, maxBuffer: 1024 * 1024 },
       );
       const outputDuration = await audioDuration(output);
       if (
@@ -279,9 +300,13 @@ async function processAudio(job: Job) {
         (outputDuration < segment.end - segment.start - 0.5 ||
           outputDuration > segment.end - segment.start + 0.5)
       )
-        throw new Error('Source does not contain the selected excerpt');
-      await storage().remove([outputKey]);
-      await storage().upload(outputKey, await readFile(output), 'audio/mpeg');
+        throw new AudioProcessingError(
+          'Audio inspection failed. The source does not contain the full selected excerpt. Choose a different range.',
+        );
+      await audioStep('Audio storage', async () => {
+        await storage().remove([outputKey]);
+        await storage().upload(outputKey, await readFile(output), 'audio/mpeg');
+      });
       await query(
         "UPDATE clips SET storage_key=$2,audio_status='ready' WHERE id=$1",
         [clipId, outputKey],
@@ -401,7 +426,7 @@ export async function runJobs() {
       // Never persist FFmpeg output, source names, or secrets in error logs.
       const message =
         job.kind === 'process_audio'
-          ? 'Audio processing failed. Check the selected range, source availability, and FFmpeg/yt-dlp installation.'
+          ? audioFailureMessage(error)
           : error instanceof Error
             ? error.message.slice(0, 200)
             : 'Background job failed';
