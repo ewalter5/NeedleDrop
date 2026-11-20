@@ -177,13 +177,57 @@ The development environment may require permission to run `tsx` outside its rest
 
 GitHub Actions runs **Production checks** on pushes and pull requests to `main`. It builds the actual Docker image without service secrets, verifies FFmpeg/FFprobe/yt-dlp, and runs typechecking and the isolated tests inside that Linux image. No production deployment or real email delivery happens in CI. Render is configured to auto-deploy future commits only after CI checks pass.
 
-Create a Render Blueprint using `render.yaml`. It defines a Docker web service and a five-minute cron job in Virginia. Enter secret values on the web service during initial setup; the cron job references the same credentials automatically. A shared environment group generates the unsubscribe secret and sets the private storage bucket name and demo mode off. Set `APP_URL` to your final HTTPS origin, then use that same origin in Supabase's Site URL and callback allowlist. Supply the three Spotify variables on the web service to enable playlist import. Do not copy Windows executable paths into Render; Docker includes the required tools. Render does not prompt again for new `sync: false` values added to an existing Blueprint, so add later credentials through its Environment settings.
+The default `render.yaml` now creates **one Free web service**, with no paid cron job, worker, disk, or Render database. Accounts, written records, and processed audio stay in the existing Supabase project. A Windows computer runs the durable job queue. The website remains accessible when the PC is off, but new clips, notifications, and audio cleanup wait for the worker. Render Free can sleep after 15 minutes of inactivity and take about a minute to wake on the next visit; this is a small hobby-group setup with free-tier limits, not an uptime guarantee.
 
-The web service runs migrations before deployment and checks `/api/health`. That health check requires Supabase/database settings plus Resend API key, sender, app URL and unsubscribe secret. Finish email setup before expecting a healthy production deployment. No persistent Render filesystem is used; durable data resides in Postgres/Storage.
+Enter Supabase/database and Spotify credentials during initial setup. Copy the **same** `UNSUBSCRIBE_SECRET` used by the local worker; don't independently generate different values. The container's startup script uses Render's own HTTPS address when `APP_URL` is unset, runs the idempotent migrations (Free services do not have pre-deploy commands), and starts Next.js. To use a custom domain later, set `APP_URL` explicitly. Set Supabase's Site URL and callback allowlist to the hosted origin. Do not copy Windows executable paths or the Gmail app password into Render. Render does not prompt again for new `sync: false` values added to an existing Blueprint, so add later credentials through its Environment settings.
+
+`/api/health` checks the critical database/Supabase/app settings and unsubscribe secret. Local email delivery is independent of website readiness. Supabase Auth still needs custom SMTP before signup/reset emails can reach new players. No persistent Render filesystem is used.
 
 Enable external monitoring for `/api/health` and job failures. The health route checks database/schema readiness and required service configuration, not delivery to an actual inbox. Before inviting players, complete a real signup/reset, tagged-audio upload/playback, test email, guest-host run, complete quiz, and backup restore in a separate staging environment. Docker/FFmpeg and real Supabase/Resend delivery need verification with your service accounts.
 
-The build reads no secrets and uses no build-time public SDK credentials; runtime configuration is sufficient. Keep `ALLOW_DEMO` unset/false on the real site.
+The build reads no secrets and uses no build-time public SDK credentials; runtime configuration is sufficient. Keep `ALLOW_DEMO` unset/false on the hosted site.
+
+## Windows test worker
+
+The local worker can be moved to another PC later: clone the repo, install Node 24/pnpm/FFmpeg/FFprobe/yt-dlp, configure a private `.env.local` for the same Supabase project, and install the task there. Only run the intended worker machines; the database claims jobs safely if a manual run overlaps.
+
+To install on Windows, from the project folder run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-worker.ps1
+Start-ScheduledTask -TaskName 'NeedleDrop local worker'
+```
+
+The task is named **NeedleDrop local worker**. It starts at Windows sign-in and repeats every five minutes while that user is signed in and online. It runs hidden with the current user's limited privileges, discovers the fnm Node 24 environment and audio tools, and skips overlapping task runs. It does not wake a sleeping PC. Its log is `logs/worker.log`, excluded from Git. For manual processing, use `pnpm.cmd jobs`; for a foreground loop, use `pnpm.cmd jobs:watch`.
+
+To inspect or disable it:
+
+```powershell
+Get-ScheduledTaskInfo -TaskName 'NeedleDrop local worker'
+Get-Content .\logs\worker.log -Tail 20
+Disable-ScheduledTask -TaskName 'NeedleDrop local worker'
+```
+
+To remove it later, use `Unregister-ScheduledTask -TaskName 'NeedleDrop local worker' -Confirm:$false`. Disabling/removing the task leaves quizzes and queued jobs intact.
+
+### Gmail email without a custom domain
+
+Use a dedicated Gmail account and create a Google app password after enabling 2-Step Verification. Google may limit app-password availability for some accounts. Put the app password directly into the private `.env.local`; never use the normal Google password or commit the file.
+
+```dotenv
+MAIL_TRANSPORT=smtp
+EMAIL_FROM="Needle Drop <your-quiz-account@gmail.com>"
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=your-quiz-account@gmail.com
+SMTP_PASSWORD=YOUR_GOOGLE_APP_PASSWORD
+WORKER_APP_URL=https://YOUR-SERVICE.onrender.com
+WORKER_SEND_EMAILS=false
+```
+
+For signup/reset emails, configure **Supabase Authentication → Email/SMTP** with the same Gmail host, port, username, app password, and sender address, then save the hosted Site URL/callback URLs. These auth messages are sent by Supabase, so the PC does not need to be on. The local worker sends quiz notifications separately. Render Free blocks SMTP ports, so SMTP quiz messages must stay on the local worker.
+
+Keep `WORKER_SEND_EMAILS=false` during testing; email jobs remain queued without consuming attempts, while audio jobs still process. Set it to `true` only after Gmail SMTP, the shared unsubscribe secret, and `WORKER_APP_URL` are ready. SMTP failures stop for manual review because SMTP does not provide Resend-style idempotency; check the mailbox before requeuing a delivery to avoid duplicates. Gmail sending limits apply. Resend remains supported with `MAIL_TRANSPORT=resend`, its API key, verified sender, and explicit email enablement.
 
 ## Your server later
 

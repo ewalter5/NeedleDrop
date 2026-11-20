@@ -28,8 +28,6 @@ async function route(req: NextRequest, { params }: { params: Promise<{ path: str
       if (
         !configured() ||
         !process.env.APP_URL ||
-        !process.env.RESEND_API_KEY ||
-        !process.env.EMAIL_FROM ||
         (process.env.UNSUBSCRIBE_SECRET?.length || 0) < 32
       )
         return json({ status: 'not configured' }, 503);

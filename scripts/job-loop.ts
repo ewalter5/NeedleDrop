@@ -1,5 +1,4 @@
-import nextEnv from '@next/env';
-nextEnv.loadEnvConfig(process.cwd());
+import './worker-env';
 const { runJobs } = await import('../src/server/jobs');
 let stopping = false;
 process.on('SIGTERM', () => {

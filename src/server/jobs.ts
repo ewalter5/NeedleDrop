@@ -8,7 +8,7 @@ import { query, transaction, lockQuiz } from './db';
 import { enqueue, releaseIfReady } from './service';
 import { reminderDue } from '@/lib/domain';
 import { storage } from './storage';
-import { mailer, unsubscribeUrl } from './mail';
+import { mailer, unsubscribeUrl, mailConfigured, SmtpDeliveryError } from './mail';
 import { segmentSchema, youtubeUrl, type Segment } from '@/lib/audio-source';
 import { audioStep, audioFailureMessage, AudioProcessingError } from './audio-errors';
 import { downloadedSongDetails, type SongDetails } from '@/lib/song-metadata';
@@ -407,8 +407,9 @@ export async function runJobs() {
   for (let i = 0; i < 100; i++) {
     const job = await transaction(async (c) => {
       const [j] = await query(
-        `SELECT * FROM jobs WHERE (state='pending' AND due_at<=now()) OR (state='working' AND locked_at<now()-interval '10 minutes') ORDER BY due_at FOR UPDATE SKIP LOCKED LIMIT 1`,
-        [],
+        `SELECT * FROM jobs WHERE ((state='pending' AND due_at<=now()) OR (state='working' AND locked_at<now()-interval '10 minutes'))
+         AND (kind<>'email' OR $1) ORDER BY due_at FOR UPDATE SKIP LOCKED LIMIT 1`,
+        [mailConfigured()],
         c,
       );
       if (!j) return null;
@@ -438,8 +439,8 @@ export async function runJobs() {
             ? error.message.slice(0, 200)
             : 'Background job failed';
       await query(
-        "UPDATE jobs SET state=CASE WHEN attempts>=5 AND kind NOT IN ('delete_audio','reconcile_audio') THEN 'failed' ELSE 'pending' END,due_at=now()+least(60,power(2,least(attempts,6)))*interval '1 minute',last_error=$2 WHERE id=$1",
-        [job.id, message],
+        "UPDATE jobs SET state=CASE WHEN $3 OR (attempts>=5 AND kind NOT IN ('delete_audio','reconcile_audio')) THEN 'failed' ELSE 'pending' END,due_at=now()+least(60,power(2,least(attempts,6)))*interval '1 minute',last_error=$2 WHERE id=$1",
+        [job.id, message, error instanceof SmtpDeliveryError],
       );
       if (job.kind === 'process_audio' && job.attempts >= 5) {
         await query(

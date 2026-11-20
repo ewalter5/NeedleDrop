@@ -68,6 +68,24 @@ after(async () => {
   delete (globalThis as unknown as { pool?: Pool }).pool;
 });
 
+test('a test worker leaves email jobs queued while email sending is disabled', async () => {
+  const saved = process.env.WORKER_SEND_EMAILS;
+  process.env.WORKER_SEND_EMAILS = 'false';
+  try {
+    await service.enqueue('email', 'disabled-email-test', { event: 'open', userId: player.id });
+    await runJobs();
+    const [job] = await query(
+      "SELECT state,attempts FROM jobs WHERE dedupe_key='disabled-email-test'",
+    );
+    assert.equal(job.state, 'pending');
+    assert.equal(job.attempts, 0);
+    await query("DELETE FROM jobs WHERE dedupe_key='disabled-email-test'");
+  } finally {
+    if (saved === undefined) delete process.env.WORKER_SEND_EMAILS;
+    else process.env.WORKER_SEND_EMAILS = saved;
+  }
+});
+
 test('YouTube import enforces host access and queues a validated private excerpt', async () => {
   const created = await service.createQuiz(dad);
   const clipId = id(980);

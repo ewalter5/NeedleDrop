@@ -16,4 +16,4 @@ COPY --from=build --chown=node:node /app /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
 USER node
 EXPOSE 3000
-CMD ["node","node_modules/next/dist/bin/next","start","--hostname","0.0.0.0"]
+CMD ["sh","scripts/start.sh"]
