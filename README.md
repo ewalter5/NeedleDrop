@@ -139,7 +139,18 @@ In a draft quiz, **Import songs** reads a Spotify playlist's titles and artists.
 
 YouTube search selections suggest the song and artist immediately, preferring music metadata and falling back to common `Artist - Song` titles. For directly pasted links, the background worker fills blank title/artist answers from download metadata; refresh after processing. Existing answers and host corrections are preserved. These are suggestions, so verify the correct answers before publishing. Uploaded local audio files still use manually entered answers.
 
-Credentials are a one-time server setup. Hosts never enter tokens or sign into Spotify in the editor. Set `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in the web service's environment. For playlists requiring user authorization, supply a refresh token as `SPOTIFY_REFRESH_TOKEN`, obtained through Spotify's authorization-code flow with the playlist read scopes needed by that account. The server refreshes access tokens; no credentials reach the browser. Spotify's current app access rules can restrict reading playlists to the authorized owner/collaborator, even for public playlists; a public link does not guarantee API access. Failed imports explain the limitation, and manual song search/direct YouTube links remain available. The API reads at most 30 available tracks, skipping local files and episodes.
+Credentials are a one-time server setup. Hosts never enter tokens or sign into Spotify in the editor. Spotify's current development-mode rules require the app owner to have Premium, and playlist items are accessible only when the authorized user owns or collaborates on that playlist. Public visibility alone does not grant API access. Players listening to the quiz do not need Spotify accounts or Premium. The API reads at most 30 available tracks, skipping local files and episodes.
+
+To configure Spotify locally:
+
+1. Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and create an app that uses **Web API**.
+2. Register the exact redirect URI `http://127.0.0.1:8888/callback`. Spotify does not accept `localhost` as a redirect URI. This address is only for the one-time setup helper, not the website's Supabase login.
+3. Copy the app's Client ID and Client Secret into `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in `.env.local`.
+4. From the project folder, run `pnpm.cmd spotify:auth` on Windows (`pnpm spotify:auth` elsewhere).
+5. Open the authorization URL printed in the terminal. Sign in with the Spotify account that owns or collaborates on the quiz playlists, and approve playlist-read access. If using a separate account in development mode, add it to the app's allowed users first.
+6. The helper saves `SPOTIFY_REFRESH_TOKEN` to `.env.local` without printing the token. Restart the website, paste a playlist link in **Import songs**, and click **Read playlist**.
+
+The helper listens only on `127.0.0.1:8888`, validates OAuth state, requests read-only playlist scopes, and times out after five minutes. If port 8888 is in use, close the service using it before retrying. Refresh tokens can expire or be revoked; rerun the helper when account authorization needs renewing. For deployment, copy all three Spotify variables privately into the web service's environment settings. The server refreshes access tokens; no secrets reach the browser. Import failures explain account restrictions, and manual YouTube search/direct links remain available.
 
 Install `yt-dlp[default]` with Python/pip, FFmpeg and FFprobe on the job server, and yt-dlp on the web server for searches. Node 24 supplies yt-dlp's JavaScript runtime. Docker includes these tools. `YTDLP_PATH`, `FFMPEG_PATH`, and optional `FFPROBE_PATH` allow executable overrides. Rebuild the Docker image periodically to update yt-dlp as YouTube changes. Never supply browser cookies or login credentials to this feature.
 

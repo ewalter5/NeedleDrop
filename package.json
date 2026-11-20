@@ -11,7 +11,8 @@
     "test": "tsx --test tests/*.test.ts",
     "jobs": "tsx scripts/jobs.ts",
     "migrate": "tsx scripts/migrate.ts",
-    "admin": "tsx scripts/admin.ts"
+    "admin": "tsx scripts/admin.ts",
+    "spotify:auth": "tsx scripts/spotify-auth.ts"
   },
   "dependencies": {
     "@next/env": "^16.0.0",

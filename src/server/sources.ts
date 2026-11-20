@@ -19,6 +19,11 @@ async function spotifyToken() {
       'Configure Spotify client credentials on the server to import playlists.',
     );
   const refresh = process.env.SPOTIFY_REFRESH_TOKEN;
+  if (!refresh)
+    throw new HttpError(
+      503,
+      'Authorize the Spotify playlist owner on the server with pnpm spotify:auth, then restart the website.',
+    );
   const response = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
     cache: 'no-store',
@@ -27,11 +32,7 @@ async function spotifyToken() {
       Authorization: `Basic ${Buffer.from(`${client}:${secret}`).toString('base64')}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams(
-      refresh
-        ? { grant_type: 'refresh_token', refresh_token: refresh }
-        : { grant_type: 'client_credentials' },
-    ),
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh }),
   });
   if (!response.ok)
     throw new HttpError(
