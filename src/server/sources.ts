@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { z } from 'zod';
 import { HttpError } from './auth';
 import { spotifyPlaylistId, youtubeUrl } from '@/lib/audio-source';
+import { songDetails } from '@/lib/song-metadata';
 
 const run = promisify(execFile);
 export const sourceRequestSchema = z.discriminatedUnion('kind', [
@@ -119,6 +120,7 @@ export async function searchYoutube(query: string) {
           title: e.title,
           channel: e.channel || '',
           duration: e.duration,
+          song: songDetails(e),
         })),
     };
   } catch {

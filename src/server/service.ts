@@ -156,7 +156,7 @@ export async function hostQuiz(id: string, p: Profile) {
   await requireHost(p, id);
   const q = await getQuiz(id);
   const fields = await query(
-    `SELECT f.id,f.clip_id AS "clipId",f.label,f.kind,f.max_points::float AS "maxPoints",f.position,k.answer,k.alternatives FROM answer_fields f JOIN answer_keys k ON k.field_id=f.id WHERE f.quiz_id=$1 ORDER BY f.position`,
+    `SELECT f.id,f.clip_id AS "clipId",f.label,f.kind,f.max_points::float AS "maxPoints",f.position,k.answer FROM answer_fields f JOIN answer_keys k ON k.field_id=f.id WHERE f.quiz_id=$1 ORDER BY f.position`,
     [id],
   );
   const clips = await query(
@@ -174,12 +174,7 @@ export async function hostQuiz(id: string, p: Profile) {
     suggestions: Object.fromEntries(
       fields.map((f) => [
         f.id,
-        suggestGrade(
-          s.answers[f.id] || '',
-          [f.answer, ...f.alternatives],
-          f.kind,
-          Number(f.maxPoints),
-        ),
+        suggestGrade(s.answers[f.id] || '', f.answer, f.kind, Number(f.maxPoints)),
       ]),
     ),
   }));
@@ -238,11 +233,7 @@ export async function saveQuiz(id: string, p: Profile, input: unknown) {
         [f.id, id, f.clipId, f.label, f.kind, f.maxPoints, f.position],
         c,
       );
-      await query(
-        'INSERT INTO answer_keys(field_id,answer,alternatives) VALUES($1,$2,$3)',
-        [f.id, f.answer, JSON.stringify(f.alternatives)],
-        c,
-      );
+      await query('INSERT INTO answer_keys(field_id,answer) VALUES($1,$2)', [f.id, f.answer], c);
     }
     return { ok: true };
   });

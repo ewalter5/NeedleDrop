@@ -8,7 +8,7 @@ import { useApp } from './app';
 import { api, AudioPlayer, Loading, Notice, dateLabel } from './shared';
 import type { Quiz, Field, Submission, FieldKind } from '@/lib/types';
 import { AudioEditor, PlaylistImporter, type SourceTrack } from './audio-editor';
-type HostField = Field & { answer: string; alternatives: string[] };
+type HostField = Field & { answer: string };
 type HostQuiz = Omit<Quiz, 'fields' | 'clips'> & {
   fields: HostField[];
   clips: { id: string; position: number; ready: boolean; audioStatus?: string }[];
@@ -80,7 +80,6 @@ export function HostPage({ id }: { id?: string }) {
       fields: quiz.fields.map((field, position) => ({
         ...field,
         position,
-        alternatives: field.alternatives.map((a) => a.trim()).filter(Boolean),
       })),
     });
   }
@@ -107,7 +106,6 @@ export function HostPage({ id }: { id?: string }) {
           maxPoints: 1,
           position: quiz.fields.length + i,
           answer: kind === 'title' ? track.title : kind === 'artist' ? track.artist : '',
-          alternatives: [],
         })),
       ],
     });
@@ -132,7 +130,6 @@ export function HostPage({ id }: { id?: string }) {
           maxPoints: 1,
           position: quiz.fields.length,
           answer: '',
-          alternatives: [],
         },
       ],
     });
@@ -257,21 +254,12 @@ export function HostPage({ id }: { id?: string }) {
         )}
       </div>
       <label>
-        Correct answer / grading guide
+        Correct answer
         <textarea
           rows={2}
           disabled={!editable || busy}
           value={f.answer}
           onChange={(e) => updateField(f.id, { answer: e.target.value })}
-        />
-      </label>
-      <label>
-        Accepted alternatives (one per line)
-        <textarea
-          rows={2}
-          disabled={!editable || busy}
-          value={f.alternatives.join('\n')}
-          onChange={(e) => updateField(f.id, { alternatives: e.target.value.split('\n') })}
         />
       </label>
     </div>
@@ -559,7 +547,6 @@ export function HostPage({ id }: { id?: string }) {
                       maxPoints: 1,
                       position: start + j,
                       answer: '',
-                      alternatives: [],
                     })),
                   ],
                 });
@@ -669,7 +656,8 @@ export function HostPage({ id }: { id?: string }) {
                 </span>
               </div>
               <p className="section-description">
-                Exact matches are suggestions. Confirm every field to release results automatically.
+                Matching title and artist answers have full credit filled in. Review all other
+                answers manually, then confirm each entry to release results.
               </p>
               {host.submissions.map((s) => (
                 <GradeEntry key={s.id} quiz={quiz} submission={s} onDone={load} />
@@ -768,9 +756,7 @@ function GradeEntry({
               <span className={`match-chip ${s.suggestions[f.id]?.match}`}>
                 {s.suggestions[f.id]?.match === 'exact'
                   ? 'Exact match — suggested full credit'
-                  : s.suggestions[f.id]?.match === 'possible'
-                    ? 'Possible misspelling — review needed'
-                    : 'Manual review'}
+                  : 'Manual review'}
               </span>
               <div className="grade-inputs">
                 <label>

@@ -14,12 +14,12 @@ import { verifyUnsubscribe, unsubscribeToken } from '../src/server/mail';
 import { ffmpegArguments } from '../src/server/jobs';
 test('grading normalizes case, spacing, punctuation, and accents, with no blank exact matches', () => {
   assert.equal(normalizeAnswer('  BÉYONCÉ!  Knowles '), 'beyonce knowles');
-  assert.deepEqual(suggestGrade('AC/DC', ['acdc'], 'artist', 2), { match: 'exact', points: 2 });
-  assert.equal(suggestGrade('Fleetwod Mac', ['Fleetwood Mac'], 'artist', 1).match, 'possible');
-  assert.equal(suggestGrade('Stars', ['Space'], 'title', 1).match, 'manual');
-  assert.equal(suggestGrade('', [''], 'title', 1).match, 'manual');
+  assert.deepEqual(suggestGrade('AC/DC', 'acdc', 'artist', 2), { match: 'exact', points: 2 });
+  assert.equal(suggestGrade('Fleetwod Mac', 'Fleetwood Mac', 'artist', 1).match, 'manual');
+  assert.equal(suggestGrade('Stars', 'Space', 'title', 1).match, 'manual');
+  assert.equal(suggestGrade('', '', 'title', 1).match, 'manual');
   for (const kind of ['connection', 'theme', 'custom'])
-    assert.equal(suggestGrade('Space', ['Space'], kind, 3).match, 'manual');
+    assert.equal(suggestGrade('Space', 'Space', kind, 3).match, 'manual');
 });
 test('state boundaries and release require submitted, host-reviewed entries', () => {
   const q = {

@@ -7,6 +7,7 @@ import type { Profile } from '../src/lib/types';
 import * as service from '../src/server/service';
 import { query } from '../src/server/db';
 import { runJobs, scheduleJobs } from '../src/server/jobs';
+import { fillSongAnswers } from '../src/server/song-answers';
 const db = new PGlite();
 const id = (n: number) => `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const dad: Profile = {
@@ -127,6 +128,11 @@ test('full quiz lifecycle: host permissions, private drafts, versioned submissio
     ],
   };
   await service.saveQuiz(quizId, guest, draft);
+  assert.deepEqual(
+    (await query('SELECT alternatives FROM answer_keys WHERE field_id=$1', [title]))[0]
+      .alternatives,
+    [],
+  );
   await assert.rejects(() => service.playerQuiz(quizId, player), /not opened/);
   await assert.rejects(() => service.publishQuiz(quizId, guest), /processed audio/);
   await query("UPDATE clips SET audio_status='ready',storage_key='sanitized-object' WHERE id=$1", [
@@ -212,6 +218,41 @@ test('full quiz lifecycle: host permissions, private drafts, versioned submissio
     grades: { [title]: { points: 1, feedback: '' }, [theme]: { points: 4, feedback: 'Corrected' } },
   });
   assert.equal((await query('SELECT count(*)::int AS n FROM grade_audit'))[0].n, 2);
+});
+
+test('metadata fills blank song answers but preserves host corrections and other questions', async () => {
+  const created = await service.createQuiz(dad);
+  const clipId = id(981);
+  await query('INSERT INTO clips(id,quiz_id,position) VALUES($1,$2,1)', [clipId, created.id]);
+  const fields = [
+    { id: id(982), kind: 'title', answer: '' },
+    { id: id(983), kind: 'artist', answer: 'Host correction' },
+    { id: id(984), kind: 'connection', answer: '' },
+  ];
+  for (const f of fields) {
+    await query(
+      'INSERT INTO answer_fields(id,quiz_id,clip_id,label,kind,max_points,position) VALUES($1,$2,$3,$4,$4,1,0)',
+      [f.id, created.id, clipId, f.kind],
+    );
+    await query('INSERT INTO answer_keys(field_id,answer,alternatives) VALUES($1,$2,$3)', [
+      f.id,
+      f.answer,
+      JSON.stringify(['Old alternative']),
+    ]);
+  }
+  await fillSongAnswers(clipId, { title: 'Detected title', artist: 'Detected artist' });
+  await fillSongAnswers(clipId, { title: 'Later metadata', artist: 'Later artist' });
+  await query(
+    'INSERT INTO submissions(quiz_id,user_id,answers,submitted_at) VALUES($1,$2,$3,now())',
+    [created.id, player.id, JSON.stringify({ [id(982)]: 'Old alternative' })],
+  );
+  const host = await service.hostQuiz(created.id, dad);
+  assert.equal(host.quiz.fields.find((f) => f.id === id(982))?.answer, 'Detected title');
+  assert.equal(host.quiz.fields.find((f) => f.id === id(983))?.answer, 'Host correction');
+  assert.equal(host.quiz.fields.find((f) => f.id === id(984))?.answer, '');
+  assert.equal(JSON.stringify(host).includes('alternatives'), false);
+  assert.equal(host.submissions[0].suggestions[id(982)].match, 'manual');
+  await query('DELETE FROM quizzes WHERE id=$1', [created.id]);
 });
 test('community ownership and single-level replies are enforced', async () => {
   const post = await service.writePost(player, {

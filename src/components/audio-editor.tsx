@@ -2,9 +2,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, Notice } from './shared';
 import { segmentSchema, youtubeUrl } from '@/lib/audio-source';
+import type { SongDetails } from '@/lib/song-metadata';
 
 export type SourceTrack = { title: string; artist: string; url: string };
-type Match = { title: string; channel: string; url: string; duration?: number };
+type Match = { title: string; channel: string; url: string; duration?: number; song: SongDetails };
 
 export function PlaylistImporter({
   quizId,
@@ -150,7 +151,7 @@ export function PlaylistImporter({
                 className="button"
                 disabled={disabled || busy}
                 onClick={() => {
-                  onAdd(track || { title: '', artist: '', url: '' }, m.url);
+                  onAdd(track || { ...m.song, url: '' }, m.url);
                   setMessage(
                     'Added a clip below. Choose its start and end, then import the excerpt.',
                   );

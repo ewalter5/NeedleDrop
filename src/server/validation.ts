@@ -9,7 +9,6 @@ export const fieldSchema = z.object({
   maxPoints: z.number().positive().max(1000),
   position: z.number().int().min(0),
   answer: z.string().trim().max(2000),
-  alternatives: z.array(z.string().trim().min(1).max(300)).max(30),
 });
 export const quizSchema = z
   .object({

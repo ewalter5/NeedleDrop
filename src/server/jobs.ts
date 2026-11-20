@@ -11,6 +11,8 @@ import { storage } from './storage';
 import { mailer, unsubscribeUrl } from './mail';
 import { segmentSchema, youtubeUrl, type Segment } from '@/lib/audio-source';
 import { audioStep, audioFailureMessage, AudioProcessingError } from './audio-errors';
+import { downloadedSongDetails, type SongDetails } from '@/lib/song-metadata';
+import { fillSongAnswers } from './song-answers';
 
 export const ffmpegArguments = (input: string, output: string, segment?: Segment) => [
   '-nostdin',
@@ -65,6 +67,8 @@ export function youtubeArguments(url: string, output: string, segment: Segment) 
     '--download-sections',
     `*${range.start}-${range.end}`,
     '--force-keyframes-at-cuts',
+    '--print',
+    'after_move:%(.{track,artist,title,channel,creator})j',
     // yt-dlp requires an actual file/directory here, not a command name on PATH.
     ...(ffmpeg && /[\\/]/.test(ffmpeg) ? ['--ffmpeg-location', ffmpeg] : []),
     '--output',
@@ -254,15 +258,17 @@ async function processAudio(job: Job) {
     try {
       let input = join(dir, 'source');
       const output = join(dir, 'clip.mp3');
+      let song: SongDetails | undefined;
       if (sourceUrl) {
         if (!segment) throw new Error('Missing YouTube segment');
-        await audioStep('YouTube download', () =>
+        const download = await audioStep('YouTube download', () =>
           promisify(execFile)(
             process.env.YTDLP_PATH || 'yt-dlp',
             youtubeArguments(sourceUrl, join(dir, 'download.%(ext)s'), segment),
             { timeout: 180000, maxBuffer: 1024 * 1024, windowsHide: true },
           ),
         );
+        song = downloadedSongDetails(download.stdout);
         const files = (await readdir(dir)).filter(
           (f) => /^download\.[a-z0-9]+$/.test(f) && !f.endsWith('.part'),
         );
@@ -307,6 +313,7 @@ async function processAudio(job: Job) {
         await storage().remove([outputKey]);
         await storage().upload(outputKey, await readFile(output), 'audio/mpeg');
       });
+      if (song) await fillSongAnswers(clipId, song, c);
       await query(
         "UPDATE clips SET storage_key=$2,audio_status='ready' WHERE id=$1",
         [clipId, outputKey],
