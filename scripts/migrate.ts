@@ -1,6 +1,6 @@
-import { loadEnvConfig } from '@next/env';
+import nextEnv from '@next/env';
 import { readdir, readFile } from 'node:fs/promises';
-loadEnvConfig(process.cwd());
+nextEnv.loadEnvConfig(process.cwd());
 const { pool, transaction } = await import('../src/server/db');
 try {
   await transaction(async (c) => {

@@ -1,5 +1,5 @@
-import { loadEnvConfig } from '@next/env';
-loadEnvConfig(process.cwd());
+import nextEnv from '@next/env';
+nextEnv.loadEnvConfig(process.cwd());
 const { query, pool } = await import('../src/server/db');
 const email = process.argv[2];
 if (!email) throw new Error('Usage: pnpm admin admin@example.com (after verified signup)');
