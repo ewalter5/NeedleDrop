@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import { ArrowLeft, Plus, Save, Trash2, Eye, Send, Check, Shield, RefreshCw } from 'lucide-react';
 import { useApp } from './app';
-import { api, AudioPlayer, Loading, Notice, dateLabel } from './shared';
+import { api, ApiError, AudioPlayer, Loading, Notice, dateLabel } from './shared';
 import type { Quiz, Field, Submission, FieldKind } from '@/lib/types';
 import { AudioEditor, PlaylistImporter, type SourceTrack } from './audio-editor';
 import { findExistingSong } from '@/lib/clip-sources';
@@ -37,6 +37,19 @@ export function HostPage({ id }: { id?: string }) {
   const quizRef = useRef<HostQuiz | null>(null);
   quizRef.current = quiz;
   const [error, setError] = useState('');
+  const [sessionExpired, setSessionExpired] = useState(false);
+  function reportError(error: unknown) {
+    setError(error instanceof Error ? error.message : 'Unable to complete the request.');
+    setSessionExpired(error instanceof ApiError && error.status === 401);
+  }
+  const signInHelp = sessionExpired ? (
+    <p className="notice">
+      <Link href="/login" target="_blank" rel="noopener noreferrer">
+        Sign in again in another tab
+      </Link>
+      <span>Then retry your action here. Unsaved edits stay in this tab.</span>
+    </p>
+  ) : null;
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -47,6 +60,7 @@ export function HostPage({ id }: { id?: string }) {
   async function load() {
     if (!id) return;
     const h = await api<HostData>(`host/${id}`);
+    setSessionExpired(false);
     setHost(h);
     quizRef.current = h.quiz;
     setQuiz(h.quiz);
@@ -60,16 +74,15 @@ export function HostPage({ id }: { id?: string }) {
         );
         return;
       }
-      load().catch((e) => setError(e.message));
+      load().catch(reportError);
     }
     if (data.profile?.admin && !data.demo)
-      api<Member[]>('admin/users')
-        .then(setUsers)
-        .catch((e) => setError(e.message));
+      api<Member[]>('admin/users').then(setUsers).catch(reportError);
   }, [id, data.demo, data.profile?.admin]); // eslint-disable-line react-hooks/exhaustive-deps
   async function action(fn: () => Promise<unknown>, success = 'Saved.') {
     setBusy(true);
     setError('');
+    setSessionExpired(false);
     setMessage('');
     try {
       if (data.demo) throw new Error('Connect live services to use the host studio.');
@@ -77,7 +90,7 @@ export function HostPage({ id }: { id?: string }) {
       setMessage(success);
       await refresh();
     } catch (e) {
-      setError((e as Error).message);
+      reportError(e);
     } finally {
       setBusy(false);
     }
@@ -186,6 +199,7 @@ export function HostPage({ id }: { id?: string }) {
           )}
         </div>
         <Notice error message={error} />
+        {signInHelp}
         <Notice message={message} />
         {data.demo && (
           <div className="card studio-intro">
@@ -227,6 +241,7 @@ export function HostPage({ id }: { id?: string }) {
           Host studio
         </Link>
         {error ? <Notice error message={error} /> : <Loading />}
+        {signInHelp}
       </>
     );
   const editable = quiz.state === 'draft';
@@ -323,6 +338,7 @@ export function HostPage({ id }: { id?: string }) {
         </div>
       </div>
       <Notice error message={error} />
+      {signInHelp}
       <Notice message={message} />
       {preview ? (
         <div className="preview-quiz">

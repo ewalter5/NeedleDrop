@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { query } from './db';
 import type { Profile } from '@/lib/types';
+import { sessionState } from './auth-state';
 
 export const configured = () =>
   !!(
@@ -36,8 +37,17 @@ export async function currentUser(): Promise<Profile | null> {
   if (!configured()) return null;
   const {
     data: { user },
+    error,
   } = await (await authClient()).auth.getUser();
-  if (!user?.email_confirmed_at) return null;
+  const state = sessionState(user, error);
+  if (state === 'unavailable')
+    throw new HttpError(503, 'Sign-in could not be checked right now. Please try again shortly.');
+  if (state === 'unverified')
+    throw new HttpError(
+      403,
+      'Please verify your email using the confirmation link, then sign in again.',
+    );
+  if (state !== 'signed-in' || !user) return null;
   const name =
     String(user.user_metadata?.display_name || 'Music lover')
       .trim()
@@ -54,7 +64,11 @@ export async function currentUser(): Promise<Profile | null> {
 }
 export async function requireUser() {
   const p = await currentUser();
-  if (!p) throw new HttpError(401, 'Please sign in with a verified account.');
+  if (!p)
+    throw new HttpError(
+      401,
+      'Your sign-in session is missing or has expired. Please sign in again.',
+    );
   if (p.restricted)
     throw new HttpError(403, 'This account has been restricted. Contact the quiz administrator.');
   return p;

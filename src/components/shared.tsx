@@ -1,6 +1,14 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { AlertCircle, ArrowUpRight, Check, Play, LoaderCircle } from 'lucide-react';
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
 export async function api<T = Record<string, unknown>>(
   path: string,
   method = 'GET',
@@ -18,7 +26,7 @@ export async function api<T = Record<string, unknown>>(
     body: body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Unable to complete this request.');
+  if (!res.ok) throw new ApiError(data.error || 'Unable to complete this request.', res.status);
   return data as T;
 }
 export function Notice({ message, error = false }: { message: string; error?: boolean }) {
