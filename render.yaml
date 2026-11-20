@@ -1,6 +1,24 @@
+# Prompt for secrets on the web service and share them with the cron job.
 envVarGroups:
-  - name: needle-drop-secrets
+  - name: needle-drop-shared
     envVars:
+      - key: UNSUBSCRIBE_SECRET
+        generateValue: true
+      - key: STORAGE_BUCKET
+        value: quiz-audio
+      - key: ALLOW_DEMO
+        value: 'false'
+services:
+  - type: web
+    name: needle-drop
+    runtime: docker
+    region: virginia
+    plan: starter
+    autoDeployTrigger: checksPass
+    healthCheckPath: /api/health
+    preDeployCommand: node node_modules/tsx/dist/cli.mjs scripts/migrate.ts
+    envVars:
+      - fromGroup: needle-drop-shared
       - key: DATABASE_URL
         sync: false
       - key: NEXT_PUBLIC_SUPABASE_URL
@@ -15,21 +33,33 @@ envVarGroups:
         sync: false
       - key: EMAIL_FROM
         sync: false
-      - key: UNSUBSCRIBE_SECRET
-        generateValue: true
-services:
-  - type: web
-    name: needle-drop
-    runtime: docker
-    plan: starter
-    healthCheckPath: /api/health
-    preDeployCommand: node node_modules/tsx/dist/cli.mjs scripts/migrate.ts
-    envVars:
-      - fromGroup: needle-drop-secrets
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_REFRESH_TOKEN
+        sync: false
   - type: cron
     name: needle-drop-jobs
     runtime: docker
+    region: virginia
+    plan: starter
+    autoDeployTrigger: checksPass
     schedule: '*/5 * * * *'
     dockerCommand: node node_modules/tsx/dist/cli.mjs scripts/jobs.ts
     envVars:
-      - fromGroup: needle-drop-secrets
+      - fromGroup: needle-drop-shared
+      - key: DATABASE_URL
+        fromService: { type: web, name: needle-drop, envVarKey: DATABASE_URL }
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        fromService: { type: web, name: needle-drop, envVarKey: NEXT_PUBLIC_SUPABASE_URL }
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        fromService: { type: web, name: needle-drop, envVarKey: NEXT_PUBLIC_SUPABASE_ANON_KEY }
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromService: { type: web, name: needle-drop, envVarKey: SUPABASE_SERVICE_ROLE_KEY }
+      - key: APP_URL
+        fromService: { type: web, name: needle-drop, envVarKey: APP_URL }
+      - key: RESEND_API_KEY
+        fromService: { type: web, name: needle-drop, envVarKey: RESEND_API_KEY }
+      - key: EMAIL_FROM
+        fromService: { type: web, name: needle-drop, envVarKey: EMAIL_FROM }

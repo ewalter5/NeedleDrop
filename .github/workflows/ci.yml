@@ -1,0 +1,35 @@
+name: Production checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  container-and-tests:
+    name: Docker build, audio tools, and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build production image without service credentials
+        run: docker build --tag needledrop:ci .
+      - name: Verify FFmpeg
+        run: docker run --rm needledrop:ci ffmpeg -version
+      - name: Verify FFprobe
+        run: docker run --rm needledrop:ci ffprobe -version
+      - name: Verify yt-dlp
+        run: docker run --rm --entrypoint /opt/yt-dlp/bin/yt-dlp needledrop:ci --version
+      - name: Typecheck inside the production image
+        run: docker run --rm needledrop:ci node node_modules/typescript/bin/tsc --noEmit
+      - name: Run isolated tests inside the production image
+        run: docker run --rm needledrop:ci sh -c 'node node_modules/tsx/dist/cli.mjs --test tests/*.test.ts'

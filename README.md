@@ -175,7 +175,11 @@ The development environment may require permission to run `tsx` outside its rest
 
 ## Render deployment
 
-Push this repository to your Git provider and create a Render Blueprint using `render.yaml`. It defines a Docker web service and a five-minute cron job sharing one environment group. Fill all environment values and set `APP_URL` to your final HTTPS domain. The web service runs migrations before deployment and checks `/api/health`. No persistent Render filesystem is used; durable data resides in Postgres/Storage.
+GitHub Actions runs **Production checks** on pushes and pull requests to `main`. It builds the actual Docker image without service secrets, verifies FFmpeg/FFprobe/yt-dlp, and runs typechecking and the isolated tests inside that Linux image. No production deployment or real email delivery happens in CI. Render is configured to auto-deploy future commits only after CI checks pass.
+
+Create a Render Blueprint using `render.yaml`. It defines a Docker web service and a five-minute cron job in Virginia. Enter secret values on the web service during initial setup; the cron job references the same credentials automatically. A shared environment group generates the unsubscribe secret and sets the private storage bucket name and demo mode off. Set `APP_URL` to your final HTTPS origin, then use that same origin in Supabase's Site URL and callback allowlist. Supply the three Spotify variables on the web service to enable playlist import. Do not copy Windows executable paths into Render; Docker includes the required tools. Render does not prompt again for new `sync: false` values added to an existing Blueprint, so add later credentials through its Environment settings.
+
+The web service runs migrations before deployment and checks `/api/health`. That health check requires Supabase/database settings plus Resend API key, sender, app URL and unsubscribe secret. Finish email setup before expecting a healthy production deployment. No persistent Render filesystem is used; durable data resides in Postgres/Storage.
 
 Enable external monitoring for `/api/health` and job failures. The health route checks database/schema readiness and required service configuration, not delivery to an actual inbox. Before inviting players, complete a real signup/reset, tagged-audio upload/playback, test email, guest-host run, complete quiz, and backup restore in a separate staging environment. Docker/FFmpeg and real Supabase/Resend delivery need verification with your service accounts.
 
